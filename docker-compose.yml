@@ -1,0 +1,107 @@
+services:
+  # --- Database ---
+
+  mysql:
+    container_name: "mysql-${LOCAL_DOMAIN}"
+    image: mysql:${MYSQL_VERSION:-8.0.35}
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # --- Application ---
+
+  wordpress:
+    container_name: "wordpress-${LOCAL_DOMAIN}"
+    build:
+      context: ./wordpress
+      args:
+        PHP_VERSION: ${PHP_VERSION:-8.4}
+        WP_VERSION: ${WP_VERSION:-6.9.4}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: mysql
+      WORDPRESS_DB_NAME: ${DB_NAME}
+      WORDPRESS_DB_USER: ${DB_USER}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+      SITE_URL: ${SITE_URL}
+      BLOG_NAME: ${BLOG_NAME}
+      WORDPRESS_DEBUG: 1
+      WP_ADMIN_USER: ${WP_ADMIN_USER:-admin}
+      WP_ADMIN_PASSWORD: ${WP_ADMIN_PASSWORD:-admin}
+      WP_ADMIN_EMAIL: ${WP_ADMIN_EMAIL:-admin@example.com}
+      DELETE_DEFAULT_THEMES: ${DELETE_DEFAULT_THEMES:-1}
+      INSTALL_FORMIDABLE: ${INSTALL_FORMIDABLE:-0}
+      INSTALL_ICON_BLOCK: ${INSTALL_ICON_BLOCK:-0}
+      INSTALL_FILEBIRD: ${INSTALL_FILEBIRD:-0}
+    volumes:
+      - ./src:/var/www/html
+      - ./php/php.ini:/usr/local/etc/php/conf.d/custom.ini:ro
+      - wp_uploads:/var/www/html/wp-content/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9000'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 120s
+    restart: unless-stopped
+
+  # --- Web ---
+
+  nginx:
+    container_name: "nginx-${LOCAL_DOMAIN}"
+    build:
+      context: ./nginx
+      args:
+        NGINX_VERSION: ${NGINX_VERSION:-1.26.1}
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT}:80"
+      - "${HTTPS_PORT}:443"
+    environment:
+      LOCAL_DOMAIN: ${LOCAL_DOMAIN}
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs
+      - ./src:/var/www/html:ro
+      - wp_uploads:/var/www/html/wp-content/uploads:ro
+    restart: unless-stopped
+
+  # --- Tools ---
+
+  phpmyadmin:
+    container_name: "phpmyadmin-${LOCAL_DOMAIN}"
+    image: phpmyadmin:latest
+    depends_on:
+      - mysql
+    ports:
+      - "${PHPMYADMIN_PORT}:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    restart: unless-stopped
+
+  mailpit:
+    container_name: "mailpit-${LOCAL_DOMAIN}"
+    image: axllent/mailpit:latest
+    ports:
+      - "${MAILPIT_PORT}:8025"
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  wp_uploads:
