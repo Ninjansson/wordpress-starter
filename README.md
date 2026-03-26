@@ -12,12 +12,12 @@ phpMyAdmin, Mailpit, and automatic HTTPS via mkcert. Versions are controlled via
 - [Configuration](#configuration)
 - [URLs](#urls)
 - [start.sh — version-checked startup](#startsh--version-checked-startup)
-- [Trusting the certificate on macOS](#trusting-the-certificate-on-macos)
-  - [Safari and Chrome on macOS](#safari-and-chrome-on-macos)
-  - [Firefox on macOS](#firefox-on-macos)
 - [Trusting the certificate on Windows](#trusting-the-certificate-on-windows)
   - [Chrome and Edge on Windows](#chrome-and-edge-on-windows)
   - [Firefox on Windows](#firefox-on-windows)
+- [Trusting the certificate on macOS](#trusting-the-certificate-on-macos)
+  - [Safari and Chrome on macOS](#safari-and-chrome-on-macos)
+  - [Firefox on macOS](#firefox-on-macos)
 - [Changing the site URL](#changing-the-site-url)
 - [Services](#services)
 - [Project structure](#project-structure)
@@ -29,6 +29,7 @@ phpMyAdmin, Mailpit, and automatic HTTPS via mkcert. Versions are controlled via
   - [phpMyAdmin](#phpmyadmin)
   - [Database](#database)
 - [Regenerating certificates](#regenerating-certificates)
+- [Re-running first-time setup](#re-running-first-time-setup)
 - [Full reset](#full-reset)
 - [Built with Claude Code](#built-with-claude-code)
 
@@ -43,7 +44,11 @@ Two pieces of software need to be installed on your machine before you can run t
 | Docker Desktop | Runs all the containers | [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/) |
 | Git Bash | Runs `start.sh` on Windows | [git-scm.com/downloads](https://git-scm.com/downloads) |
 
-Everything else (Git, WP-CLI, mkcert, PHP, nginx, etc.) runs inside the containers — nothing else needs to be installed on your machine.
+Git Bash is bundled with Git for Windows — if you already have Git installed, you likely
+have it already. Look for "Git Bash" in your Start menu.
+
+Everything else (WP-CLI, mkcert, PHP, nginx, etc.) runs inside the containers — nothing
+else needs to be installed on your machine.
 
 ---
 
@@ -72,7 +77,8 @@ See the [Configuration](#configuration) section for a full reference of every av
 ### 2. Add the domain to your hosts file
 
 This tells your computer to point the domain to your local machine.
-Open **PowerShell as Administrator** and run (replacing `myproject.local` with your domain):
+Open **PowerShell as Administrator** and run the command below, replacing `myproject.local`
+with whatever you set as `LOCAL_DOMAIN` in the previous step:
 
 ```powershell
 Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 myproject.local"
@@ -105,7 +111,7 @@ Import-Certificate -FilePath ".\nginx\certs\rootCA.pem" `
 
 Then **fully close and reopen** your browser.
 
-For Firefox or macOS, see the [detailed certificate trust instructions](#trusting-the-certificate-on-macos) below.
+For Firefox, or if you are on macOS, see the [detailed certificate trust instructions](#trusting-the-certificate-on-windows) below.
 
 ### 5. Open your site
 
@@ -125,13 +131,13 @@ All settings live in `.env`. Here is a full reference:
 ```env
 # Ports
 HTTP_PORT=80           # HTTP port (redirects to HTTPS)
-HTTPS_PORT=443         # HTTPS port
+HTTPS_PORT=443         # HTTPS port — see note below if you change this
 PHPMYADMIN_PORT=8888   # phpMyAdmin UI
 MAILPIT_PORT=8025      # Mailpit UI
 
 # Domains
 LOCAL_DOMAIN=myproject.local
-SITE_URL=https://myproject.local
+SITE_URL=https://myproject.local   # Must match LOCAL_DOMAIN — see note below if you change HTTPS_PORT
 
 # Versions — change these to use different versions
 PHP_VERSION=8.4
@@ -165,17 +171,32 @@ DB_ROOT_PASSWORD=secret
 ```
 
 After changing any version number, run `./start.sh --build` to rebuild the affected images.
-After changing anything else, run `./start.sh` to restart with the new values.
+After changing anything else (domains, credentials, site name), run `./start.sh` to restart
+with the new values.
+
+> **Note — theme and plugin flags:** `DOWNLOAD_CRETLACH_THEME`, `DELETE_DEFAULT_THEMES`,
+> and the `INSTALL_*` flags only take effect during first-time setup. If you change them
+> after the stack has already been set up, you need to re-run first-time setup — see
+> [Re-running first-time setup](#re-running-first-time-setup).
+
+> **Important — if you change `HTTPS_PORT` away from 443:** port 443 is the standard HTTPS
+> port, so browsers don't show it in the URL. If you use a different port (e.g. 8443), you
+> must also update `SITE_URL` to include the port — for example
+> `SITE_URL=https://myproject.local:8443` — otherwise WordPress will generate broken links.
+> You also need to update the redirect in `nginx/nginx.conf`. See
+> [Changing the site URL](#changing-the-site-url) for the full steps.
 
 ---
 
 ## URLs
 
+Replace `myproject.local` in the table below with whatever you set as `LOCAL_DOMAIN` in `.env`.
+
 | URL | What it does |
 |-----|-------------|
-| `http://<LOCAL_DOMAIN>` | Redirects → `https://<LOCAL_DOMAIN>` |
-| `https://<LOCAL_DOMAIN>` | WordPress site |
-| `https://<LOCAL_DOMAIN>/wp-admin` | WordPress admin |
+| `http://myproject.local` | Redirects → `https://myproject.local` |
+| `https://myproject.local` | WordPress site |
+| `https://myproject.local/wp-admin` | WordPress admin |
 | `http://localhost:8888` | phpMyAdmin |
 | `http://localhost:8025` | Mailpit (caught emails) |
 
@@ -183,9 +204,11 @@ After changing anything else, run `./start.sh` to restart with the new values.
 
 ## start.sh — version-checked startup
 
-Instead of running `docker compose up` directly, use `start.sh`. It validates
-that every version specified in `.env` actually exists on Docker Hub before
-attempting to build or pull anything, then asks for confirmation before starting.
+You can start the stack with plain `docker compose up --build` if you prefer, but
+`start.sh` adds one useful step first: it validates that every version specified in
+`.env` actually exists on Docker Hub before attempting to build or pull anything,
+then asks for confirmation before starting. This prevents a failed build caused by
+a typo in a version number.
 
 ```bash
 ./start.sh             # normal start
@@ -229,26 +252,59 @@ Press Enter (or `y`) to continue, `n` to abort.
 
 ---
 
+## Trusting the certificate on Windows
+
+### Chrome and Edge on Windows
+
+Both Chrome and Edge use the Windows system certificate store, so one import covers both.
+
+> The stack must have been started at least once before the certificate file exists.
+> If you followed Quick Start, it already has been.
+
+1. Open **PowerShell as Administrator** and run from the project root:
+   ```powershell
+   Import-Certificate -FilePath ".\nginx\certs\rootCA.pem" `
+       -CertStoreLocation Cert:\LocalMachine\Root
+   ```
+
+2. **Fully close and reopen** Chrome or Edge.
+
+3. Visit `https://myproject.local` (your domain) — green padlock, no warnings.
+
+> You only need to do this once. If you regenerate certificates, repeat this step.
+
+### Firefox on Windows
+
+Firefox manages its own certificate store independently of the Windows system store.
+
+1. Open Firefox and go to **Settings → Privacy & Security**.
+2. Scroll down to **Certificates** and click **View Certificates**.
+3. Select the **Authorities** tab and click **Import**.
+4. In the file dialog, navigate to the project folder, then open the `nginx\certs` subfolder
+   and select `rootCA.pem`.
+5. Check **Trust this CA to identify websites** and click **OK**.
+6. Restart Firefox.
+
+---
+
 ## Trusting the certificate on macOS
 
 ### Safari and Chrome on macOS
 
 Both Safari and Chrome use the macOS system keychain, so one import covers both.
 
-1. Start the stack once so certificates are generated:
-   ```bash
-   ./start.sh --build
-   ```
+> The stack must have been started at least once before the certificate file exists.
+> If you followed Quick Start, it already has been.
 
-2. Run this command from the project root:
+1. Run this command from the project root:
    ```bash
    sudo security add-trusted-cert -d -r trustRoot \
        -k /Library/Keychains/System.keychain nginx/certs/rootCA.pem
    ```
 
-3. **Fully close and reopen** Safari or Chrome.
+2. **Fully close and reopen** Safari or Chrome.
 
-4. Visit `https://<LOCAL_DOMAIN>` — green padlock, no warnings.
+3. Visit `https://myproject.local` (your domain) — green padlock, no warnings.
 
 Alternatively, you can import it manually via Keychain Access:
 1. Open **Keychain Access** (search for it in Spotlight).
@@ -264,43 +320,8 @@ Firefox manages its own certificate store independently of the system keychain.
 1. Open Firefox and go to **Settings → Privacy & Security**.
 2. Scroll down to **Certificates** and click **View Certificates**.
 3. Select the **Authorities** tab and click **Import**.
-4. Navigate to `nginx/certs/rootCA.pem` and open it.
-5. Check **Trust this CA to identify websites** and click **OK**.
-6. Restart Firefox.
-
----
-
-## Trusting the certificate on Windows
-
-### Chrome and Edge on Windows
-
-Both Chrome and Edge use the Windows system certificate store, so one import covers both.
-
-1. Start the stack once so certificates are generated:
-   ```bash
-   ./start.sh --build
-   ```
-
-2. Open **PowerShell as Administrator** and run from the project root:
-   ```powershell
-   Import-Certificate -FilePath ".\nginx\certs\rootCA.pem" `
-       -CertStoreLocation Cert:\LocalMachine\Root
-   ```
-
-3. **Fully close and reopen** Chrome or Edge.
-
-4. Visit `https://<LOCAL_DOMAIN>` — green padlock, no warnings.
-
-> You only need to do this once. If you regenerate certificates, repeat this step.
-
-### Firefox on Windows
-
-Firefox manages its own certificate store independently of the Windows system store.
-
-1. Open Firefox and go to **Settings → Privacy & Security**.
-2. Scroll down to **Certificates** and click **View Certificates**.
-3. Select the **Authorities** tab and click **Import**.
-4. Navigate to `nginx/certs/rootCA.pem` and open it.
+4. In the file dialog, navigate to the project folder, then open the `nginx/certs` subfolder
+   and select `rootCA.pem`.
 5. Check **Trust this CA to identify websites** and click **OK**.
 6. Restart Firefox.
 
@@ -314,7 +335,10 @@ Firefox manages its own certificate store independently of the Windows system st
    SITE_URL=https://yourchoice.local
    ```
 
-2. Update the fallback in `nginx/entrypoint.sh` (line 5):
+2. Update the hardcoded fallback domain in `nginx/entrypoint.sh` (line 5). Open the file
+   in any text editor and change the fallback value to match your new domain. This value
+   is only used if Docker fails to pass the environment variable through — it should
+   always match `LOCAL_DOMAIN`:
    ```sh
    DOMAIN="${LOCAL_DOMAIN:-yourchoice.local}"
    ```
@@ -324,22 +348,40 @@ Firefox manages its own certificate store independently of the Windows system st
    Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "127.0.0.1 yourchoice.local"
    ```
 
-4. Delete the old certificates so they are regenerated for the new domain:
+4. Delete the old certificates so they are regenerated for the new domain.
+   Run this in **Git Bash** from the project folder:
    ```bash
    rm nginx/certs/cert.pem nginx/certs/key.pem nginx/certs/rootCA.pem
    ```
 
-5. Rebuild and restart:
+5. Rebuild and restart in **Git Bash**:
    ```bash
    ./start.sh --build
    ```
 
-6. Re-import the new `nginx/certs/rootCA.pem` into Windows (see Chrome instructions above).
-
-> If you change `HTTPS_PORT` away from 443, also update the redirect in
-> `nginx/nginx.conf` to include the port: `return 301 https://$host:PORT$request_uri`.
+6. Re-import the new `nginx/certs/rootCA.pem` into Windows (see [Chrome and Edge on Windows](#chrome-and-edge-on-windows) above).
 
 ---
+
+**If you are also changing `HTTPS_PORT` away from 443**, three more things need updating
+in addition to the steps above:
+
+- **`SITE_URL` in `.env`** must include the port:
+  ```env
+  SITE_URL=https://yourchoice.local:8443
+  ```
+- **The HTTP→HTTPS redirect in `nginx/nginx.conf`** must include the port. Open the file
+  in any text editor, find the line that reads `return 301 https://$host$request_uri;`
+  and change it to:
+  ```nginx
+  return 301 https://$host:8443$request_uri;
+  ```
+- **Re-import the certificate** after rebuilding (step 6 above).
+
+Skipping any of these three will result in either broken links or a browser that refuses
+to open the site.
+
+
 
 ## Services
 
@@ -368,7 +410,7 @@ mailpit (independent)
 wordpresser/
 ├── .env                        # All configuration — ports, domains, versions, credentials
 ├── docker-compose.yml
-├── start.sh                    # Version-checking startup script (use this instead of docker compose)
+├── start.sh                    # Version-checking startup script (optional, see start.sh section)
 ├── src/                        # WordPress files (populated automatically on first run)
 ├── php/
 │   └── php.ini                 # Custom PHP configuration
@@ -410,10 +452,27 @@ directory as a volume — nginx mounts it read-only for serving static assets,
 WordPress mounts it read-write so it can manage its own files (themes, plugins,
 uploads).
 
-WordPress uses `SITE_URL` from `.env` for both `WP_HOME` and `WP_SITEURL`,
-so changing the URL requires only an `.env` update.
+WordPress uses `SITE_URL` from `.env` for both `WP_HOME` and `WP_SITEURL` — these
+are synced automatically on every container start, so you never need to update them
+manually in the WordPress database. Note that changing your domain involves more than
+just `.env`; see [Changing the site URL](#changing-the-site-url) for the full steps.
 
 WordPress pretty permalinks are supported via `try_files $uri $uri/ /index.php?$args`.
+
+### First-run setup
+
+The WordPress container runs a setup script (`wordpress/entrypoint.sh`) every time
+it starts, but most of the work only happens once. On first start it installs
+WordPress, clones the theme, removes default themes and plugins, and installs any
+plugins enabled in `.env`. When finished it writes a marker file at
+`src/.setup_complete`. On every subsequent start the script sees that file and skips
+straight to starting PHP-FPM — so plain restarts are fast and produce no noise in
+the logs.
+
+Two things still run on every start regardless: the uploads directory permissions
+fix (harmless and instant) and the siteurl/blogname sync, so that changing
+`SITE_URL` or `BLOG_NAME` in `.env` and running `docker compose up` is enough to
+pick up the new values without a full rebuild.
 
 ### File uploads
 
@@ -456,28 +515,49 @@ persists across container restarts. Credentials are configured in `.env`.
 
 ## Regenerating certificates
 
+If you need to regenerate certificates (e.g. after changing `LOCAL_DOMAIN`),
+run these in **Git Bash** from the project folder:
+
 ```bash
 rm nginx/certs/cert.pem nginx/certs/key.pem nginx/certs/rootCA.pem
 docker compose restart nginx
 ```
 
-Then re-import `rootCA.pem` into your browser (see certificate trust instructions above).
+Then re-import `rootCA.pem` into your browser — see the certificate trust instructions
+above for your browser and OS.
+
+---
+
+## Re-running first-time setup
+
+If you want to re-run the one-time setup (for example, you changed a plugin flag in
+`.env` after the first run), delete the marker file and restart the container.
+Run these in **Git Bash** from the project folder:
+
+```bash
+rm src/.setup_complete
+docker compose up -d
+```
+
+The container will run through the full setup again on the next start. This is
+lighter than a full reset — your database and uploaded files are left untouched.
 
 ---
 
 ## Full reset
 
+> **Warning:** This deletes all WordPress content, database data, and uploaded files.
+> There is no undo.
+
 To completely tear down the stack and start fresh — removes all containers, images,
-volumes, and WordPress files:
+volumes, and WordPress files. Run these in **Git Bash** from the project folder:
 
 ```bash
 docker compose down -v --rmi all
-rm -rf src/*
+rm -rf src && mkdir src
 ```
 
 Then run `./start.sh --build` to rebuild everything from scratch.
-
-> This deletes all WordPress content, database data, and uploaded files. There is no undo.
 
 ---
 
