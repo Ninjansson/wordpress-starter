@@ -9,6 +9,6 @@ RUN go install filippo.io/mkcert@latest
 FROM nginx:${NGINX_VERSION}
 COPY --from=mkcert-builder /go/bin/mkcert /usr/local/bin/mkcert
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

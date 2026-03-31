@@ -98,6 +98,12 @@ The script checks that all versions in `.env` exist on Docker Hub, asks for conf
 then builds and starts everything. On first run this will take a few minutes. When it's
 done, WordPress will be fully installed and configured automatically — there is no setup wizard.
 
+After the initial setup, you don't need `start.sh` for day-to-day use. Just run:
+
+```bash
+docker compose up -d
+```
+
 ### 4. Trust the SSL certificate
 
 On first run, mkcert generates a local SSL certificate. You need to tell your browser to
@@ -111,7 +117,8 @@ Import-Certificate -FilePath ".\nginx\certs\rootCA.pem" `
 
 Then **fully close and reopen** your browser.
 
-For Firefox, or if you are on macOS, see the [detailed certificate trust instructions](#trusting-the-certificate-on-windows) below.
+For Firefox on Windows, see [Firefox on Windows](#firefox-on-windows) below.
+If you are on macOS, see [Trusting the certificate on macOS](#trusting-the-certificate-on-macos) below.
 
 ### 5. Open your site
 
@@ -171,7 +178,7 @@ DB_ROOT_PASSWORD=secret
 ```
 
 After changing any version number, run `./start.sh --build` to rebuild the affected images.
-After changing anything else (domains, credentials, site name), run `./start.sh` to restart
+After changing anything else (domains, credentials, site name), run `docker compose up -d` to restart
 with the new values.
 
 > **Note — theme and plugin flags:** `DOWNLOAD_CRETLACH_THEME`, `DELETE_DEFAULT_THEMES`,
@@ -179,12 +186,16 @@ with the new values.
 > after the stack has already been set up, you need to re-run first-time setup — see
 > [Re-running first-time setup](#re-running-first-time-setup).
 
-> **Important — if you change `HTTPS_PORT` away from 443:** port 443 is the standard HTTPS
-> port, so browsers don't show it in the URL. If you use a different port (e.g. 8443), you
-> must also update `SITE_URL` to include the port — for example
-> `SITE_URL=https://myproject.local:8443` — otherwise WordPress will generate broken links.
-> You also need to update the redirect in `nginx/nginx.conf`. See
-> [Changing the site URL](#changing-the-site-url) for the full steps.
+> **Important — if you change `HTTPS_PORT` away from 443:**
+> Port 443 is the standard HTTPS port, so browsers don't show it in the URL.
+> If you use a non-standard port (e.g. 8443), three things must also be updated
+> or WordPress will generate broken links and the site may not load:
+>
+> 1. Set `SITE_URL` to include the port: `SITE_URL=https://myproject.local:8443`
+> 2. Update the HTTP→HTTPS redirect in `nginx/nginx.conf`
+> 3. Re-import the certificate after rebuilding
+>
+> See [Changing the site URL](#changing-the-site-url) for the full steps.
 
 ---
 
@@ -204,16 +215,18 @@ Replace `myproject.local` in the table below with whatever you set as `LOCAL_DOM
 
 ## start.sh — version-checked startup
 
-You can start the stack with plain `docker compose up --build` if you prefer, but
-`start.sh` adds one useful step first: it validates that every version specified in
-`.env` actually exists on Docker Hub before attempting to build or pull anything,
-then asks for confirmation before starting. This prevents a failed build caused by
-a typo in a version number.
+`start.sh` is intended for the initial setup and for any time you need to rebuild images
+(e.g. after changing a version number in `.env`). For day-to-day use after the initial
+setup, `docker compose up -d` is all you need.
+
+When you do use `start.sh`, it validates that every version specified in `.env` actually
+exists on Docker Hub before attempting to build or pull anything, then asks for confirmation
+before starting. This prevents a failed build caused by a typo in a version number.
 
 ```bash
-./start.sh             # normal start
-./start.sh -d          # detached (background)
-./start.sh --build     # force rebuild of images
+./start.sh             # start with version checks (initial setup)
+./start.sh -d          # same, detached (background)
+./start.sh --build     # force rebuild of images (after version changes)
 ./start.sh --build -d  # rebuild in background
 ```
 
@@ -381,7 +394,7 @@ in addition to the steps above:
 Skipping any of these three will result in either broken links or a browser that refuses
 to open the site.
 
-
+---
 
 ## Services
 
@@ -407,7 +420,7 @@ mailpit (independent)
 ## Project structure
 
 ```
-wordpresser/
+demo/
 ├── .env                        # All configuration — ports, domains, versions, credentials
 ├── docker-compose.yml
 ├── start.sh                    # Version-checking startup script (optional, see start.sh section)
@@ -566,7 +579,5 @@ Then run `./start.sh --build` to rebuild everything from scratch.
 This project was developed with [Claude Code](https://claude.ai/claude-code),
 the official CLI for Claude by Anthropic.
 
-| | |
-|-|-|
-| **Model** | Claude Sonnet 4.6 (`claude-sonnet-4-6`) |
-| **Developer** | [Anthropic](https://www.anthropic.com) |
+- **Model:** Claude Sonnet 4.6 (`claude-sonnet-4-6`)
+- **Developer:** [Anthropic](https://www.anthropic.com)
