@@ -1,2 +1,9 @@
 # WordPress source files
 src/
+
+# Generated SSL certificates
+nginx/certs/*
+!nginx/certs/.gitkeep
+
+# Claude Code
+.claude/

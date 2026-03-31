@@ -186,16 +186,23 @@ with the new values.
 > after the stack has already been set up, you need to re-run first-time setup — see
 > [Re-running first-time setup](#re-running-first-time-setup).
 
-> **Important — if you change `HTTPS_PORT` away from 443:**
-> Port 443 is the standard HTTPS port, so browsers don't show it in the URL.
-> If you use a non-standard port (e.g. 8443), three things must also be updated
-> or WordPress will generate broken links and the site may not load:
+> **Important — if `HTTPS_PORT` is anything other than 443:**
+> Port 443 is the standard HTTPS port and browsers assume it by default. If you use
+> any other port (e.g. 8443), two things **must** be updated or WordPress will generate
+> broken links and the HTTP redirect will point to the wrong address:
 >
-> 1. Set `SITE_URL` to include the port: `SITE_URL=https://myproject.local:8443`
-> 2. Update the HTTP→HTTPS redirect in `nginx/nginx.conf`
-> 3. Re-import the certificate after rebuilding
+> **1. Add the port to `SITE_URL` in `.env`:**
+> ```env
+> SITE_URL=https://myproject.local:8443
+> ```
 >
-> See [Changing the site URL](#changing-the-site-url) for the full steps.
+> **2. Add the port to the HTTP→HTTPS redirect in `nginx/nginx.conf` (line 25):**
+> ```nginx
+> return 301 https://$host:8443$request_uri;
+> ```
+>
+> See [Changing the site URL](#changing-the-site-url) for the full steps including
+> certificate regeneration.
 
 ---
 
@@ -398,7 +405,7 @@ to open the site.
 
 ## Services
 
-Versions are set in `.env` and validated by `start.sh` before each run.
+Versions are set in `.env` and validated by `start.sh` before initial setup and rebuilds.
 
 | Service | Image | Purpose |
 |---------|-------|---------|
@@ -406,7 +413,7 @@ Versions are set in `.env` and validated by `start.sh` before each run.
 | `wordpress` | `wordpress:<WP_VERSION>-php<PHP_VERSION>-fpm` | WordPress + PHP-FPM |
 | `nginx` | `nginx:<NGINX_VERSION>` (custom build) | Web server, HTTPS, SSL termination |
 | `phpmyadmin` | `phpmyadmin:latest` | Database management UI |
-| `mailpit` | `axllent/mailpit:latest` | Catches all outgoing WordPress emails |
+| `mailpit` | `axllent/mailpit:latest` | Catches all outgoing emails |
 
 **Startup order** (via `depends_on`):
 ```
@@ -484,7 +491,7 @@ the logs.
 
 Two things still run on every start regardless: the uploads directory permissions
 fix (harmless and instant) and the siteurl/blogname sync, so that changing
-`SITE_URL` or `BLOG_NAME` in `.env` and running `docker compose up` is enough to
+`SITE_URL` or `BLOG_NAME` in `.env` and running `docker compose up -d` is enough to
 pick up the new values without a full rebuild.
 
 ### File uploads
@@ -494,11 +501,9 @@ pick up the new values without a full rebuild.
 
 ### Mailpit — email catching
 
-All outgoing WordPress emails are intercepted by Mailpit — nothing reaches a
-real mail server. This is handled by a must-use plugin at
-`src/wp-content/mu-plugins/mailpit.php` which hooks into WordPress's
-`phpmailer_init` action and points PHPMailer at Mailpit's SMTP port (1025,
-internal to the Docker network only).
+Mailpit runs as its own service in the Docker stack and catches all emails sent
+within the Docker network before they reach a real mail server. No WordPress
+plugin or configuration is required — it works at the Docker level automatically.
 
 View caught emails at `http://localhost:8025`.
 
@@ -545,10 +550,16 @@ above for your browser and OS.
 
 If you want to re-run the one-time setup (for example, you changed a plugin flag in
 `.env` after the first run), delete the marker file and restart the container.
-Run these in **Git Bash** from the project folder:
+
+In **Git Bash** from the project folder, delete the marker file:
 
 ```bash
 rm src/.setup_complete
+```
+
+Then restart the stack (this works in any terminal):
+
+```bash
 docker compose up -d
 ```
 
